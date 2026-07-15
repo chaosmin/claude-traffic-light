@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.env
+
+# Arduino build artifacts
+build/
+*.bin
+*.elf
+*.map
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
