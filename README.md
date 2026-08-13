@@ -4,13 +4,16 @@ Physical traffic light for Claude Code — shows AI state in real time via ESP32
 
 ## States
 
-| State | LED | Trigger |
-|-------|-----|---------|
-| THINKING | Chase animation (R→Y→G) | Claude reasoning |
-| EXECUTING | Yellow solid | Tool call running |
-| DONE | Green solid (60s) | Task complete |
-| ERROR | Red solid | Tool error |
-| IDLE | All off | Waiting |
+| State | LED | Hook | Trigger |
+|-------|-----|------|---------|
+| THINKING | Chase animation (R→Y→G) | UserPromptSubmit | User sent a message, Claude starts working |
+| EXECUTING | Yellow solid | PreToolUse | Tool call running |
+| DONE | Green solid (60s, then auto IDLE) | Stop | Turn complete |
+| ERROR | Red solid | PostToolUse (on failure) | Tool call failed |
+| WAITING | Onboard NeoPixel solid blue (overlay — main LEDs untouched) | Notification | Claude needs your input (permission prompt / idle nudge) |
+| IDLE | All off | — | No active turn |
+
+`PostToolUse` also fires on success and resends `THINKING` (Claude resumes reasoning over the tool result).
 
 ## Hardware
 
@@ -32,32 +35,47 @@ Physical traffic light for Claude Code — shows AI state in real time via ESP32
 
 ### Claude Code hooks
 
-Add to `~/.claude/settings.json`:
+Add to `~/.claude/settings.json` (replace `/path/to` with the absolute path to this repo):
 
 ```json
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [{"type": "command", "command": "python3 /path/to/scripts/claude_light.py THINKING"}]
+      }
+    ],
     "PreToolUse": [
       {
-        "matcher": "",
+        "matcher": ".*",
         "hooks": [{"type": "command", "command": "python3 /path/to/scripts/claude_light.py EXECUTING"}]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "",
+        "matcher": ".*",
         "hooks": [{"type": "command", "command": "python3 /path/to/scripts/claude_light.py hook-post"}]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [{"type": "command", "command": "python3 /path/to/scripts/claude_light.py WAITING"}]
       }
     ],
     "Stop": [
       {
-        "matcher": "",
         "hooks": [{"type": "command", "command": "python3 /path/to/scripts/claude_light.py DONE"}]
       }
     ]
   }
 }
 ```
+
+- `UserPromptSubmit` fires when the user submits a message → sends `THINKING` (chase animation).
+- `PreToolUse` fires before every tool call → sends `EXECUTING` (yellow solid).
+- `PostToolUse` fires after every tool call → reads the tool result from stdin, sends `ERROR` if it failed, otherwise `THINKING` (resumes reasoning).
+- `Notification` fires when Claude needs your input (permission prompt, idle nudge) → sends `WAITING` (onboard NeoPixel blue overlay, main LEDs untouched).
+- `Stop` fires when Claude finishes responding → sends `DONE` (green, auto-reverts to `IDLE` after 60s).
 
 ### Environment
 
@@ -74,5 +92,16 @@ GET /cmd?state=EXECUTING
 GET /cmd?state=DONE
 GET /cmd?state=ERROR
 GET /cmd?state=IDLE
+GET /cmd?state=WAITING
 GET /status
 ```
+
+## Ideas for later (needs new hardware)
+
+Not implemented yet — notes for when parts arrive.
+
+1. **OLED (SSD1306, I2C)** — recommended first pick. Complements the LEDs instead of duplicating them: show current tool name, turn duration, connection status, error count. I2C is free (no pin conflict with 4/5/6/48).
+2. **Passive buzzer** — beep on `WAITING` (permission prompt / idle nudge) so it's audible from another room, not just visible.
+3. **WS2812 LED strip** (8–30px) instead of the single onboard pixel — smoother chase/breathing animation, could show a progress-bar-style effect during THINKING.
+4. **Physical button → approve action** — a button wired to a new HTTP endpoint that Claude Code or a companion script polls, to physically approve a pending permission prompt during `WAITING`.
+5. **BLE instead of WiFi** — drop the LAN/mDNS dependency for a portable battery setup. Biggest rework: replaces the whole WebServer/HTTP layer.

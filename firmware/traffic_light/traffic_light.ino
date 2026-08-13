@@ -63,22 +63,37 @@ void allOff() {
   digitalWrite(GREEN_PIN,  LOW);
 }
 
-void applyIdle()      { allOff(); currentState = ST_IDLE; }
-void applyThinking()  { allOff(); currentState = ST_THINKING; chaseStep = 0; lastChase = 0; }
-void applyExecuting() { allOff(); digitalWrite(YELLOW_PIN, HIGH); currentState = ST_EXECUTING; }
-void applyDone()      { allOff(); digitalWrite(GREEN_PIN,  HIGH); currentState = ST_DONE; doneAt = millis(); }
-void applyError()     { allOff(); digitalWrite(RED_PIN,    HIGH); currentState = ST_ERROR; }
+void selfTest() {
+  Serial.println("self-test: RED -> YELLOW -> GREEN -> OFF");
+  digitalWrite(RED_PIN,    HIGH); delay(300); digitalWrite(RED_PIN,    LOW);
+  digitalWrite(YELLOW_PIN, HIGH); delay(300); digitalWrite(YELLOW_PIN, LOW);
+  digitalWrite(GREEN_PIN,  HIGH); delay(300); digitalWrite(GREEN_PIN,  LOW);
+}
+
+void pixelOff() { pixel.setPixelColor(0, 0); pixel.show(); }
+
+void applyIdle()      { allOff(); pixelOff(); currentState = ST_IDLE; }
+void applyThinking()  { allOff(); pixelOff(); currentState = ST_THINKING; chaseStep = 0; lastChase = 0; }
+void applyExecuting() { allOff(); pixelOff(); digitalWrite(YELLOW_PIN, HIGH); currentState = ST_EXECUTING; }
+void applyDone()      { allOff(); pixelOff(); digitalWrite(GREEN_PIN,  HIGH); currentState = ST_DONE; doneAt = millis(); }
+void applyError()     { allOff(); pixelOff(); digitalWrite(RED_PIN,    HIGH); currentState = ST_ERROR; }
+
+// WAITING is an overlay, not a state: signals "needs your input" (permission
+// prompt / idle nudge) via the onboard NeoPixel without disturbing whichever
+// main-LED state Claude was already in.
+void applyWaiting()   { pixel.setPixelColor(0, pixel.Color(0, 0, 255)); pixel.show(); }
 
 void handleCmd() {
   String state = server.arg("state");
   state.toUpperCase();
   state.trim();
 
-  if      (state == "THINKING")  { blinkBuiltin(2, pixel.Color(0, 0, 255));   applyThinking(); }
-  else if (state == "EXECUTING") { blinkBuiltin(1, pixel.Color(255, 255, 0)); applyExecuting(); }
-  else if (state == "DONE")      { blinkBuiltin(3, pixel.Color(0, 255, 0));   applyDone(); }
-  else if (state == "ERROR")     { blinkBuiltin(4, pixel.Color(255, 0, 0));   applyError(); }
+  if      (state == "THINKING")  { applyThinking(); }
+  else if (state == "EXECUTING") { applyExecuting(); }
+  else if (state == "DONE")      { applyDone(); }
+  else if (state == "ERROR")     { applyError(); }
   else if (state == "IDLE")      { applyIdle(); }
+  else if (state == "WAITING")   { applyWaiting(); }
   else {
     server.send(400, "text/plain", "ERR:unknown state");
     return;
@@ -104,6 +119,7 @@ void setup() {
   pinMode(YELLOW_PIN, OUTPUT);
   pinMode(GREEN_PIN,  OUTPUT);
   applyIdle();
+  selfTest();
 
   // Hold BOOT button on power-up = reset saved WiFi credentials
   pinMode(RESET_PIN, INPUT_PULLUP);
